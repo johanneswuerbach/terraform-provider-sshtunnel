@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
-	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func TestAccEphemeralConnection(t *testing.T) {
@@ -26,7 +25,11 @@ ephemeral "sshtunnel_connection" "test" {
 	host = %[1]q
 	port = %[2]d
 	user = %[3]q
-	private_key = %[4]q
+
+	auth = {
+		private_key = %[4]q
+	}
+
 	local_port_forwardings = [{
 		local_port = 15432
 		remote_host = %[5]q
@@ -41,23 +44,14 @@ provider "echo" {
 resource "echo" "test" {}
 `, sshHost, sshPort, sshUser, sshPrivateKey, remoteHost)
 
-	fmt.Println("Before Test")
-
 	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			fmt.Println("PreCheck")
-		},
+		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			// Read testing
 			{
 				Config: config,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					func(s *terraform.State) error {
-						fmt.Println("Inside Check")
-						return nil
-					},
 					resource.TestCheckResourceAttr("echo.test", "data.local_port_forwardings.0.local_port", "15432"),
 				),
 			},

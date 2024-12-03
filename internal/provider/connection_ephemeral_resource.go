@@ -38,12 +38,16 @@ type ConnectionEphemeralResourceModelLocalPortForwarding struct {
 	RemotePort types.Int32  `tfsdk:"remote_port"`
 }
 
+type ConnectionEphemeralResourceModelAuth struct {
+	PrivateKey types.String `tfsdk:"private_key"`
+}
+
 // ConnectionEphemeralResourceModel describes the resource data model.
 type ConnectionEphemeralResourceModel struct {
 	Host                 types.String                                          `tfsdk:"host"`
 	Port                 types.Int32                                           `tfsdk:"port"`
 	User                 types.String                                          `tfsdk:"user"`
-	PrivateKey           types.String                                          `tfsdk:"private_key"`
+	Auth                 ConnectionEphemeralResourceModelAuth                  `tfsdk:"auth"`
 	LocalPortForwardings []ConnectionEphemeralResourceModelLocalPortForwarding `tfsdk:"local_port_forwardings"`
 }
 
@@ -157,7 +161,7 @@ func (r *ConnectionEphemeralResource) Open(ctx context.Context, req ephemeral.Op
 
 	// Setup SSH connection
 
-	signer, err := ssh.ParsePrivateKey([]byte(data.PrivateKey.ValueString()))
+	signer, err := ssh.ParsePrivateKey([]byte(data.Auth.PrivateKey.ValueString()))
 	if err != nil {
 		resp.Diagnostics.AddError("Private Key Error", fmt.Sprintf("Unable to parse private key, got error: %s", err))
 		return
