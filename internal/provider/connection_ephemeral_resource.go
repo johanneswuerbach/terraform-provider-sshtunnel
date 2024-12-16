@@ -286,6 +286,7 @@ func handleConnection(ctx context.Context, sshConn *ssh.Client, localConn net.Co
 	remoteConn, err := sshConn.Dial("tcp", remoteAddr)
 	if err != nil {
 		tflog.Error(ctx, "failed to dial remote connection", map[string]interface{}{"err": err})
+		return
 	}
 	defer remoteConn.Close()
 
