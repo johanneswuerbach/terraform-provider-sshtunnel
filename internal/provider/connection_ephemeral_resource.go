@@ -99,8 +99,9 @@ func (r *ConnectionEphemeralResource) Schema(ctx context.Context, req ephemeral.
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"local_port": schema.Int32Attribute{
-							MarkdownDescription: "Local port to forward to",
+							MarkdownDescription: "Local port to forward to (random if not specified)",
 							Optional:            true,
+							Computed:            true,
 						},
 						"remote_host": schema.StringAttribute{
 							MarkdownDescription: "Remote host to forward to",
@@ -183,7 +184,7 @@ func (r *ConnectionEphemeralResource) Open(ctx context.Context, req ephemeral.Op
 
 	// Setup local port forwardings
 
-	for _, localPortForwarding := range data.LocalPortForwardings {
+	for i, localPortForwarding := range data.LocalPortForwardings {
 		listener, err := r.createPortForward(ctx, conn, localPortForwarding.LocalPort.ValueInt32Pointer(), hostAddr(localPortForwarding.RemoteHost, localPortForwarding.RemotePort))
 		if err != nil {
 			resp.Diagnostics.AddError("Port Forwarding Error", fmt.Sprintf("Unable to create port forwarding, got error: %s", err))
@@ -199,7 +200,11 @@ func (r *ConnectionEphemeralResource) Open(ctx context.Context, req ephemeral.Op
 			return
 		}
 
-		localPortForwarding.LocalPort = basetypes.NewInt32Value(int32(tcpAddr.Port))
+		tflog.Info(ctx, "Port forwarding created", map[string]interface{}{
+			"local_port": tcpAddr.Port,
+		})
+
+		data.LocalPortForwardings[i].LocalPort = basetypes.NewInt32Value(int32(tcpAddr.Port))
 	}
 
 	resp.Diagnostics.Append(resp.Result.Set(ctx, data)...)
