@@ -72,4 +72,4 @@ Required:
 
 Optional:
 
-- `local_port` (Number) Local port to forward to
+- `local_port` (Number) Local port to forward to (random if not specified)

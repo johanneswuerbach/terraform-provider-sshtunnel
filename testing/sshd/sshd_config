@@ -1,0 +1,29 @@
+# Basic settings
+Port 22
+AddressFamily any
+
+# Authentication settings
+PermitRootLogin no
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+
+# Restrict access
+PermitEmptyPasswords no
+AllowTcpForwarding yes
+GatewayPorts no
+X11Forwarding no
+PermitTunnel no
+ForceCommand echo "This SSH server is only for port forwarding. No shell access is allowed."
+
+# Logging
+LogLevel INFO
+
+# Other security settings
+PermitUserEnvironment no
+AllowAgentForwarding no
+UseDNS no
+MaxAuthTries 3
+ClientAliveInterval 300
+ClientAliveCountMax 2

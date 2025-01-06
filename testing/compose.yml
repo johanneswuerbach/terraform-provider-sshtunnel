@@ -1,0 +1,27 @@
+services:
+  postgresbehindsshtunnel:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: terraform
+      POSTGRES_USER: terraform
+      POSTGRES_DB: terraform
+      PGUSER: terraform # required for pg_isready
+      PGDATABASE: terraform # required for pg_isready
+    healthcheck:
+      start_period: 3s
+      start_interval: 1s
+      test: ['CMD-SHELL', 'pg_isready']
+    networks:
+      - private
+
+  sshtunnel:
+    build:
+      context: ./sshd
+    ports:
+      - "23333:22"
+    networks:
+      - private
+
+networks:
+  private:
+    driver: bridge
