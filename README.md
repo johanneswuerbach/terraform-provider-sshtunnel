@@ -1,6 +1,14 @@
 # SSHTunnel Terraform Provider
 
-A Terraform Provider that allows the creation of ephemeral SSH tunnels using an [ephemeral resource](https://developer.hashicorp.com/terraform/language/resources/ephemeral).
+A Terraform Provider that allows the creation of ephemeral SSH tunnels using an [ephemeral resource](https://developer.hashicorp.com/terraform/language/resources/ephemeral), which enables
+connecting to database servers (e.g. AWS RDS) running inside a private network (e.g. AWS VPC) using an SSH jump host.
+
+## Features
+
+* Automatic forward port assignments
+* Configurable retries
+
+## Next steps
 
 * [Usage](https://registry.terraform.io/providers/johanneswuerbach/sshtunnel/latest)
 * [Documentation](https://registry.terraform.io/providers/johanneswuerbach/sshtunnel/latest/docs)
@@ -8,9 +16,10 @@ A Terraform Provider that allows the creation of ephemeral SSH tunnels using an 
 ## Requirements
 
 * [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.10
-* [Go](https://golang.org/doc/install) >= 1.23
 
-## Building The Provider
+## Development
+
+### Building The Provider
 
 1. Clone the repository
 1. Enter the repository directory
@@ -20,7 +29,7 @@ A Terraform Provider that allows the creation of ephemeral SSH tunnels using an 
 go install
 ```
 
-## Adding Dependencies
+### Adding Dependencies
 
 This provider uses [Go modules](https://github.com/golang/go/wiki/Modules).
 Please see the Go documentation for the most up to date information about using Go modules.
@@ -34,11 +43,7 @@ go mod tidy
 
 Then commit the changes to `go.mod` and `go.sum`.
 
-## Using the provider
-
-Fill this in for each provider
-
-## Developing the Provider
+### Developing the Provider
 
 If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (see [Requirements](#requirements) above).
 
