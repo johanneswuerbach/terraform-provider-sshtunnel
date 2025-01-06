@@ -3,11 +3,10 @@ package provider
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 	"net"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
@@ -15,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/johanneswuerbach/terraform-provider-sshtunnel/internal/portforward"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -22,6 +22,7 @@ import (
 var _ ephemeral.EphemeralResource = &ConnectionEphemeralResource{}
 var _ ephemeral.EphemeralResourceWithConfigure = &ConnectionEphemeralResource{}
 var _ ephemeral.EphemeralResourceWithClose = &ConnectionEphemeralResource{}
+var _ ephemeral.EphemeralResourceWithValidateConfig = &ConnectionEphemeralResource{}
 
 func NewConnectionEphemeralResource() ephemeral.EphemeralResource {
 	return &ConnectionEphemeralResource{}
@@ -33,9 +34,11 @@ type ConnectionEphemeralResource struct {
 }
 
 type ConnectionEphemeralResourceModelLocalPortForwarding struct {
-	LocalPort  types.Int32  `tfsdk:"local_port"`
-	RemoteHost types.String `tfsdk:"remote_host"`
-	RemotePort types.Int32  `tfsdk:"remote_port"`
+	LocalPort     types.Int32  `tfsdk:"local_port"`
+	RemoteHost    types.String `tfsdk:"remote_host"`
+	RemotePort    types.Int32  `tfsdk:"remote_port"`
+	RetryAttempts types.Int32  `tfsdk:"retry_attempts"`
+	RetryDelay    types.String `tfsdk:"retry_delay"`
 }
 
 type ConnectionEphemeralResourceModelAuth struct {
@@ -53,7 +56,6 @@ type ConnectionEphemeralResourceModel struct {
 
 const (
 	connectionPrivateDataKey = "connection"
-	defaultListenHost        = "0.0.0.0"
 )
 
 type ConnectionPrivateData struct {
@@ -111,6 +113,14 @@ func (r *ConnectionEphemeralResource) Schema(ctx context.Context, req ephemeral.
 							MarkdownDescription: "Remote port to forward to",
 							Required:            true,
 						},
+						"retry_attempts": schema.Int32Attribute{
+							MarkdownDescription: "Number of attempts to establish the connection",
+							Optional:            true,
+						},
+						"retry_delay": schema.StringAttribute{
+							MarkdownDescription: "Delay between connection attempts",
+							Optional:            true,
+						},
 					},
 				},
 				Required: true,
@@ -138,6 +148,23 @@ func (r *ConnectionEphemeralResource) Configure(ctx context.Context, req ephemer
 	}
 
 	r.tunnelTracker = configData.Tracker
+}
+
+func (r *ConnectionEphemeralResource) ValidateConfig(ctx context.Context, req ephemeral.ValidateConfigRequest, resp *ephemeral.ValidateConfigResponse) {
+	var data ConnectionEphemeralResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	for _, localPortForwarding := range data.LocalPortForwardings {
+		if !localPortForwarding.RetryDelay.IsNull() {
+			if _, err := time.ParseDuration(localPortForwarding.RetryDelay.ValueString()); err != nil {
+				resp.Diagnostics.AddError("Local Port Forwarding Error", fmt.Sprintf("Invalid retry delay: %s", err))
+			}
+		}
+	}
 }
 
 func (r *ConnectionEphemeralResource) Open(ctx context.Context, req ephemeral.OpenRequest, resp *ephemeral.OpenResponse) {
@@ -185,7 +212,25 @@ func (r *ConnectionEphemeralResource) Open(ctx context.Context, req ephemeral.Op
 	// Setup local port forwardings
 
 	for i, localPortForwarding := range data.LocalPortForwardings {
-		listener, err := r.createPortForward(ctx, conn, localPortForwarding.LocalPort.ValueInt32Pointer(), hostAddr(localPortForwarding.RemoteHost, localPortForwarding.RemotePort))
+		conf := &portforward.Config{
+			LocalPort:  localPortForwarding.LocalPort.ValueInt32Pointer(),
+			RemoteAddr: hostAddr(localPortForwarding.RemoteHost, localPortForwarding.RemotePort),
+		}
+
+		if !localPortForwarding.RetryDelay.IsNull() {
+			retryDelay, err := time.ParseDuration(localPortForwarding.RetryDelay.ValueString())
+			if err != nil {
+				resp.Diagnostics.AddError("Local Port Forwarding Error", fmt.Sprintf("Invalid retry delay: %s", err))
+				return
+			}
+			conf.RetryDelay = retryDelay
+		}
+
+		if !localPortForwarding.RetryAttempts.IsNull() {
+			conf.RetryAttempts = localPortForwarding.RetryAttempts.ValueInt32()
+		}
+
+		listener, err := portforward.New(ctx, conn, conf)
 		if err != nil {
 			resp.Diagnostics.AddError("Port Forwarding Error", fmt.Sprintf("Unable to create port forwarding, got error: %s", err))
 			resp.Diagnostics.Append(r.closeByConnectionID(id)...)
@@ -239,38 +284,6 @@ func hostAddr(host basetypes.StringValue, port basetypes.Int32Value) string {
 	return fmt.Sprintf("%s:%d", host.ValueString(), port.ValueInt32())
 }
 
-func (r *ConnectionEphemeralResource) createPortForward(ctx context.Context, conn *ssh.Client, localPort *int32, remoteAddr string) (net.Listener, error) {
-	var listenAddr string
-	if localPort != nil {
-		listenAddr = fmt.Sprintf("%s:%d", defaultListenHost, *localPort)
-	} else {
-		listenAddr = fmt.Sprintf("%s:0", defaultListenHost)
-	}
-
-	localListener, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		return nil, fmt.Errorf("net.Listen failed: %v", err)
-	}
-
-	go func() {
-		for {
-			// Accept a connection
-			localConn, err := localListener.Accept()
-			if err != nil {
-				if errors.Is(err, net.ErrClosed) {
-					return
-				}
-				tflog.Error(ctx, "failed to accept connection", map[string]interface{}{"err": err})
-				return
-			}
-
-			go handleConnection(ctx, conn, localConn, remoteAddr)
-		}
-	}()
-
-	return localListener, nil
-}
-
 func (r *ConnectionEphemeralResource) Close(ctx context.Context, req ephemeral.CloseRequest, resp *ephemeral.CloseResponse) {
 	b, diags := req.Private.GetKey(ctx, connectionPrivateDataKey)
 	if diags.HasError() {
@@ -285,31 +298,6 @@ func (r *ConnectionEphemeralResource) Close(ctx context.Context, req ephemeral.C
 	}
 
 	resp.Diagnostics.Append(r.closeByConnectionID(privateData.ID)...)
-}
-
-func handleConnection(ctx context.Context, sshConn *ssh.Client, localConn net.Conn, remoteAddr string) {
-	remoteConn, err := sshConn.Dial("tcp", remoteAddr)
-	if err != nil {
-		tflog.Error(ctx, "failed to dial remote connection", map[string]interface{}{"err": err})
-		return
-	}
-	defer remoteConn.Close()
-
-	var wait chan struct{}
-	go func() {
-		if _, err := io.Copy(remoteConn, localConn); err != nil {
-			tflog.Error(ctx, "failed to copy data from remote to local", map[string]interface{}{"err": err})
-		}
-		wait <- struct{}{}
-	}()
-
-	if _, err := io.Copy(localConn, remoteConn); err != nil {
-		tflog.Error(ctx, "failed to copy data from local to remote", map[string]interface{}{"err": err})
-	}
-
-	<-wait
-
-	defer localConn.Close()
 }
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")

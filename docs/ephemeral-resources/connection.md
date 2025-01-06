@@ -73,3 +73,5 @@ Required:
 Optional:
 
 - `local_port` (Number) Local port to forward to (random if not specified)
+- `retry_attempts` (Number) Number of attempts to establish the connection
+- `retry_delay` (String) Delay between connection attempts
